@@ -1,0 +1,81 @@
+library('httr')
+library("RedditExtractoR")
+
+wallst = find_thread_urls(subreddit = "wallstreetbets")
+fileName <- file.path("C:/Users/hbhat/Documents","wsb_month.csv")
+wsbdf = as.data.frame(wallst)
+write.csv(x=wsbdf,file = fileName)
+
+library(naivebayes)
+library(caret)
+library(e1071)
+library(quanteda)
+
+wsb = read.csv("wsb_month_bin.csv",header = TRUE,stringsAsFactors = FALSE)
+
+wsb_corpus = corpus(wsb,text_field = "title_text")
+tokens = tokens(wsb_corpus, remove_punct = TRUE, remove_numbers = TRUE,
+                    remove_url = TRUE, remove_separators = TRUE)
+tokens %>% tokens_keep(english_words) %>% 
+  tokens_remove(stopwords("english")) %>% tokens_wordstem()
+wsb_dfm = dfm(tokens) %>% dfm_remove(stopwords(kind = “en”))
+
+wsb_matrix = as.matrix(wsb_dfm)
+wsb_matrix[is.nan(wsb_matrix)] = 0
+
+set.seed(44)
+sample = sample.int(n = nrow(wsb_matrix),
+                     size = floor(.3*nrow(wsb_matrix)), 
+                     replace = FALSE)
+train_matrix = wsb_matrix[sample,]
+train_labels = wsb[sample,'sentiment']
+test_matrix = wsb_matrix[-sample,]
+test_labels = wsb[-sample, 'sentiment']
+
+dep = as.factor(wsb$sentiment)
+nb = naiveBayes(
+  x = train_matrix,
+  y = train_labels,
+  method = 'class')
+nb_pred = predict(nb, test_matrix)
+
+results = data.frame(
+  Predictions = nb_pred,
+  Actuals = as.factor(test_labels)
+)
+results
+
+confusion_matrix = confusionMatrix(data=nb_pred, 
+                                   reference = as.factor(test_labels), 
+                                   mode = 'prec_recall',
+                                   positive = 'positive')
+confusion_matrix
+
+set.seed(42) 
+sample <- sample.int(n = nrow(wsb_matrix), 
+                     size = floor(.75*nrow(wsb_matrix)), 
+                     replace = FALSE) 
+
+train_matrix = wsb_matrix[sample,] 
+train_labels = wsb[sample,'sentiment']
+test_matrix = wsb_matrix[-sample,]
+test_labels = wsb[-sample, 'sentiment']
+
+svm_mod <- svm(train_labels~.,
+               data = train_matrix, type = "C",
+               kernel = "linear")
+
+pred <- predict(svm_mod, test_matrix)
+
+confusion_matrix = confusionMatrix(data=pred, 
+                                   reference = test_labels, 
+                                   mode = 'prec_recall',
+                                   positive = 'positive')
+confusion_matrix
+
+
+library(devtools)
+library(wordcloud2)
+
+token_count_fancy = tokens %>% dfm() %>% textstat_frequency(n=100)
+wordcloud2(token_count_fancy)
